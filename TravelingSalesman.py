@@ -1,57 +1,51 @@
-
 import math
 import random
 import tkinter as tk
-from tkinter import Menu, FALSE, Canvas
+from tkinter import messagebox
 
 # Configuration parameters
 num_cities = 25
-city_scale = 5
+city_radius = 10
 road_width = 2
 padding = 50
 
-class Node:
-    def __init__(self, x, y, index):
+class Location:
+    def __init__(self, x, y, id):
         self.x = x
         self.y = y
-        self.index = index  # Unique identifier for the city
+        self.id = id  # Unique identifier for the city
 
-    def draw(self, canvas, color='green'):
+    def draw(self, canvas, color='blue'):
         canvas.create_oval(
-            self.x - city_scale * 2, self.y - city_scale * 2,
-            self.x + city_scale * 2, self.y + city_scale * 2,
+            self.x - city_radius, self.y - city_radius,
+            self.x + city_radius, self.y + city_radius,
             fill=color, outline='black'
         )
-        canvas.create_text(
-            self.x, self.y - city_scale * 3,
-            text=str(self.index),
-            font=('Arial', 12),
-            fill='red'
-        )
 
 
-class Edge:
-    def __init__(self, a, b):
-        self.city_a = a
-        self.city_b = b
-        self.length = math.hypot(a.x - b.x, a.y - b.y)
+class Path:
+    def __init__(self, start, end):
+        self.start = start
+        self.end = end
+        self.distance = math.hypot(start.x - end.x, start.y - end.y)
 
-    def draw(self, canvas, color='grey', style=None):
+    def draw(self, canvas, color='gray', dashed=False):
         kwargs = {'fill': color, 'width': road_width}
-        if style:
-            kwargs['dash'] = style
+        if dashed:
+            kwargs['dash'] = (4, 2)
         canvas.create_line(
-            self.city_a.x, self.city_a.y,
-            self.city_b.x, self.city_b.y,
+            self.start.x, self.start.y,
+            self.end.x, self.end.y,
             **kwargs
         )
 
-class TSP_Solver:
-    def __init__(self, cities):
-        self.cities = cities
-        self.num_cities = len(cities)
+
+class SalesmanProblemSolver:
+    def __init__(self, locations):
+        self.locations = locations
+        self.num_locations = len(locations)
         self.distance_matrix = self.calculate_distance_matrix()
-        self.current_solution = list(range(self.num_cities))
+        self.current_solution = list(range(self.num_locations))
         random.shuffle(self.current_solution)
         self.best_solution = self.current_solution[:]
         self.best_distance = self.calculate_total_distance(self.best_solution)
@@ -59,12 +53,12 @@ class TSP_Solver:
         self.cooling_rate = 0.995
 
     def calculate_distance_matrix(self):
-        matrix = [[0]*self.num_cities for _ in range(self.num_cities)]
-        for i in range(self.num_cities):
-            for j in range(i+1, self.num_cities):
+        matrix = [[0]*self.num_locations for _ in range(self.num_locations)]
+        for i in range(self.num_locations):
+            for j in range(i+1, self.num_locations):
                 dist = math.hypot(
-                    self.cities[i].x - self.cities[j].x,
-                    self.cities[i].y - self.cities[j].y
+                    self.locations[i].x - self.locations[j].x,
+                    self.locations[i].y - self.locations[j].y
                 )
                 matrix[i][j] = dist
                 matrix[j][i] = dist
@@ -78,14 +72,14 @@ class TSP_Solver:
             distance += self.distance_matrix[a][b]
         return distance
 
-    def swap_cities(self, solution):
+    def swap_locations(self, solution):
         new_solution = solution[:]
-        i, j = random.sample(range(self.num_cities), 2)
+        i, j = random.sample(range(self.num_locations), 2)
         new_solution[i], new_solution[j] = new_solution[j], new_solution[i]
         return new_solution
 
     def anneal(self):
-        new_solution = self.swap_cities(self.current_solution)
+        new_solution = self.swap_locations(self.current_solution)
         current_distance = self.calculate_total_distance(self.current_solution)
         new_distance = self.calculate_total_distance(new_solution)
         acceptance_prob = self.acceptance_probability(current_distance, new_distance, self.temperature)
@@ -103,102 +97,94 @@ class TSP_Solver:
         else:
             return math.exp((current_distance - new_distance) / temperature)
 
-class UI(tk.Tk):
+
+class TravelingSalesmanUI(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Traveling Salesman Problem")
-        self.option_add("*tearOff", FALSE)
-        self.width = self.winfo_screenwidth()
-        self.height = self.winfo_screenheight()
-        self.geometry(f"{self.width}x{self.height}+0+0")
-        self.state("zoomed")
+        self.title("Traveling Salesman Problem Solver")
+        self.geometry("800x600")
+        self.canvas = tk.Canvas(self)
+        self.canvas.pack(fill=tk.BOTH, expand=True)
 
-        self.canvas = Canvas(self)
-        self.canvas.place(x=0, y=0, width=self.width, height=self.height)
-        self.w = self.width - padding * 2
-        self.h = self.height - padding * 2
-
-        self.cities_list = []
-        self.tsp_solver = None
+        self.locations_list = []
+        self.solver = None
         self.is_running = False
 
-        # Menu bar setup
-        menu_bar = Menu(self)
-        self.config(menu=menu_bar)
-        menu_TS = Menu(menu_bar)
-        menu_bar.add_cascade(menu=menu_TS, label='Salesman', underline=0)
+        # Menu Bar
+        self.menu = tk.Menu(self)
+        self.config(menu=self.menu)
+        self.create_menu()
 
-        menu_TS.add_command(label="Generate", command=self.generate, underline=0)
-        menu_TS.add_command(label="Run", command=self.start_solver, underline=0)
+        # Status label
+        self.status_label = tk.Label(self, text="Shortest Path Length: --", anchor="w", bg="lightgray", relief="sunken")
+        self.status_label.pack(side=tk.BOTTOM, fill=tk.X)
+
+    def create_menu(self):
+        file_menu = tk.Menu(self.menu, tearoff=0)
+        self.menu.add_cascade(label="File", menu=file_menu)
+        file_menu.add_command(label="Generate Locations", command=self.generate)
+        file_menu.add_command(label="Start Solving", command=self.start_solver)
+        file_menu.add_command(label="Reset", command=self.reset)
+        file_menu.add_separator()
+        file_menu.add_command(label="Exit", command=self.quit)
 
     def generate(self):
         self.clear_canvas()
-        self.cities_list.clear()
+        self.locations_list.clear()
         for i in range(num_cities):
-            self.add_city(i)
-        self.draw_cities()
+            self.add_location(i)
+        self.draw_locations()
 
-    def add_city(self, index):
-        x = random.randint(padding, self.w)
-        y = random.randint(padding, self.h)
-        node = Node(x, y, index)
-        self.cities_list.append(node)
+    def add_location(self, id):
+        x = random.randint(padding, self.winfo_width() - padding)
+        y = random.randint(padding, self.winfo_height() - padding)
+        location = Location(x, y, id)
+        self.locations_list.append(location)
 
-    def draw_cities(self):
-        for city in self.cities_list:
-            city.draw(self.canvas)
+    def draw_locations(self):
+        for location in self.locations_list:
+            location.draw(self.canvas)
 
     def clear_canvas(self):
         self.canvas.delete("all")
 
     def start_solver(self):
-        if not self.cities_list:
+        if not self.locations_list:
             self.generate()
-        self.tsp_solver = TSP_Solver(self.cities_list)
+        self.solver = SalesmanProblemSolver(self.locations_list)
         self.is_running = True
         self.run_solver()
 
     def run_solver(self):
-        if self.is_running and self.tsp_solver.temperature > 1:
-            self.tsp_solver.anneal()
+        if self.is_running and self.solver.temperature > 1:
+            self.solver.anneal()
             self.clear_canvas()
-            self.draw_solution(self.tsp_solver.current_solution)
+            self.draw_solution(self.solver.current_solution)
             self.canvas.update()
-            self.after(1, self.run_solver)
+            self.after(10, self.run_solver)  # Increased delay for better user experience
         else:
             self.is_running = False
-            print(f"Best distance found: {self.tsp_solver.best_distance}")
             self.display_best_distance()
 
     def display_best_distance(self):
-        # Add a message to display the best distance found
-        self.canvas.create_text(
-            padding, padding,
-            text=f"Best Distance Found: {int(self.tsp_solver.best_distance)}",
-            font=('Arial', 20, 'bold'),
-            fill='black',
-            anchor='nw'
-        )
+        self.status_label.config(text=f"Shortest Path Length: {int(self.solver.best_distance)}")
+
+    def reset(self):
+        self.clear_canvas()
+        self.locations_list.clear()
+        self.status_label.config(text="Shortest Path Length: --")
+        self.is_running = False
 
     def draw_solution(self, solution):
-        # Draw the path
         for i in range(len(solution)):
-            city_a = self.cities_list[solution[i]]
-            city_b = self.cities_list[solution[(i + 1) % len(solution)]]
-            edge = Edge(city_a, city_b)
-            edge.draw(self.canvas, color='blue')  # Solid lines for the solution path
-        # Draw the cities
-        for city in self.cities_list:
-            city.draw(self.canvas, color='red')
-        # Display current distance
-        self.canvas.create_text(
-            padding, padding // 2,
-            text=f"Distance: {int(self.tsp_solver.best_distance)}",
-            font=('Arial', 20, 'bold'),
-            fill='black',
-            anchor='nw'
-        )
+            location_a = self.locations_list[solution[i]]
+            location_b = self.locations_list[solution[(i + 1) % len(solution)]]
+            path = Path(location_a, location_b)
+            path.draw(self.canvas, color='blue', dashed=True)  # Dotted lines for solution path
+        for location in self.locations_list:
+            location.draw(self.canvas, color='red')  # Cities shown in red
+
 
 if __name__ == '__main__':
-    ui = UI()
+    ui = TravelingSalesmanUI()
     ui.mainloop()
