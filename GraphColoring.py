@@ -15,7 +15,7 @@ class GraphColoringApp:
         self.style = ttk.Style()
         self.style.configure("TLabel", background="#f0f0f0", font=("Arial", 10))
         self.style.configure("TButton", font=("Arial", 10))
-        
+
         # Frame for input and controls
         control_frame = ttk.Frame(root, padding="20")
         control_frame.pack(fill=tk.X)
@@ -24,10 +24,16 @@ class GraphColoringApp:
         ttk.Label(control_frame, text="Number of Vertices:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
         self.vertex_entry = ttk.Entry(control_frame, width=10)
         self.vertex_entry.grid(row=0, column=1, padx=5, pady=5)
-        
+
+        # Solver selection dropdown
+        ttk.Label(control_frame, text="Solver:").grid(row=0, column=2, sticky=tk.W, padx=5, pady=5)
+        self.solver_var = tk.StringVar(value="Backtracking")
+        self.solver_dropdown = ttk.Combobox(control_frame, textvariable=self.solver_var, values=["Backtracking", "Ant Colony Optimization"], state="readonly")
+        self.solver_dropdown.grid(row=0, column=3, padx=5, pady=5)
+
         # Create graph button
         self.create_button = ttk.Button(control_frame, text="Create Graph", command=self.create_graph)
-        self.create_button.grid(row=0, column=2, padx=5, pady=5)
+        self.create_button.grid(row=0, column=4, padx=5, pady=5)
 
         # Canvas for graph visualization
         self.canvas = tk.Canvas(root, width=500, height=400, bg="white", relief=tk.RAISED, borderwidth=2)
@@ -65,10 +71,10 @@ class GraphColoringApp:
             self.n = int(self.vertex_entry.get())
             if self.n < 3:
                 raise ValueError("Number of vertices must be at least 3.")
-            
+
             # Initialize the adjacency matrix with zeros
             self.graph = np.zeros((self.n, self.n), dtype=int)
-            
+
             # Create random edges
             num_edges_to_add = int(self.n * 2)  # Adjust this number to add more edges
             for _ in range(num_edges_to_add):
@@ -77,7 +83,7 @@ class GraphColoringApp:
                     v1, v2 = random.sample(range(self.n), 2)
                 self.graph[v1][v2] = 1
                 self.graph[v2][v1] = 1  # Since the graph is undirected
-            
+
             # Calculate vertex positions for visualization
             radius = 180
             center_x, center_y = 250, 200
@@ -88,16 +94,16 @@ class GraphColoringApp:
                 )
                 for i in range(self.n)
             ]
-            
+
             # Reset the canvas and UI elements
             self.canvas.delete("all")
             self.solution_label.config(text="")
             self.generation_label.config(text="Iterations: 0")
             self.draw_graph()
-            
+
             # Enable solve button
             self.solve_button.config(state=tk.NORMAL)
-        
+
         except ValueError as e:
             self.solution_label.config(text=f"Error: {e}", foreground="red")
 
@@ -114,10 +120,10 @@ class GraphColoringApp:
     def draw_graph(self, colors=None):
         """Draws the graph with optional vertex coloring."""
         self.canvas.delete("all")
-        
+
         # Generate color palette
         color_palette = self.generate_distinct_colors(self.max_colors)
-        
+
         # Draw edges
         for i in range(self.n):
             for j in range(i+1, self.n):  # Avoid duplicate edges
@@ -125,7 +131,7 @@ class GraphColoringApp:
                     x1, y1 = self.positions[i]
                     x2, y2 = self.positions[j]
                     self.canvas.create_line(x1, y1, x2, y2, fill="gray", width=2)
-        
+
         # Draw vertices
         for i, (x, y) in enumerate(self.positions):
             # Use provided colors or random colors
@@ -133,7 +139,7 @@ class GraphColoringApp:
                 color = color_palette[colors[i]]
             else:
                 color = color_palette[random.randint(0, self.max_colors - 1)]
-            
+
             self.canvas.create_oval(x - 20, y - 20, x + 20, y + 20, 
                                     fill=color, outline="black", width=2)
             self.canvas.create_text(x, y, text=str(i), fill="white", font=("Arial", 10, "bold"))
@@ -153,55 +159,94 @@ class GraphColoringApp:
                 return False
         return True
 
-    def solve_graph_coloring_util(self, colors, vertex, iterations):
-        """Recursive utility function for graph coloring."""
-        # Update iterations display periodically
-        if vertex % 10 == 0:
-            self.generation_label.config(text=f"Iterations: {iterations[0]}")
-            self.root.update_idletasks()  # Keep UI responsive
-        
-        iterations[0] += 1
-        
-        # Base case: all vertices colored
-        if vertex == self.n:
-            return True
-        
-        # Try different colors for the vertex
-        for color in range(self.max_colors):
-            if self.is_safe_color(vertex, color, colors):
-                # Assign this color to the vertex
-                colors[vertex] = color
-                
-                # Recur to color next vertices
-                if self.solve_graph_coloring_util(colors, vertex + 1, iterations):
-                    return True
-                
-                # If assigning color doesn't lead to a solution, backtrack
-                colors[vertex] = -1
-        
-        # No solution found
-        return False
-
     def solve_graph_coloring(self):
         """Main function to solve graph coloring."""
-        # Dynamically adjust max colors based on graph complexity
+        selected_solver = self.solver_var.get()
+
+        if selected_solver == "Backtracking":
+            self.solve_with_backtracking()
+        elif selected_solver == "Ant Colony Optimization":
+            self.solve_with_aco()
+
+    def solve_with_backtracking(self):
+        """Solve graph coloring using backtracking."""
         self.max_colors = max(4, int(np.sqrt(self.n)) + 1)
-        
-        # Initialize colors array
         colors = [-1] * self.n
-        
-        # Track iterations
         iterations = [0]
-        
-        # Try to solve
+
         if self.solve_graph_coloring_util(colors, 0, iterations):
             self.solution_label.config(text="Solution Found!", foreground="green")
             self.draw_graph(colors)
         else:
             self.solution_label.config(text="No solution found", foreground="red")
-        
-        # Update final iteration count
+
         self.generation_label.config(text=f"Iterations: {iterations[0]}")
+
+    def solve_with_aco(self):
+        """Solve graph coloring using Ant Colony Optimization."""
+        iterations = 100
+        num_ants = 20
+        pheromone = np.ones((self.n, self.max_colors))
+        evaporation_rate = 0.5
+        best_colors = None
+        best_cost = float('inf')
+
+        for iteration in range(iterations):
+            all_colors = []
+            all_costs = []
+
+            for ant in range(num_ants):
+                colors = [-1] * self.n
+                for vertex in range(self.n):
+                    probabilities = pheromone[vertex] / pheromone[vertex].sum()
+                    chosen_color = np.random.choice(self.max_colors, p=probabilities)
+                    colors[vertex] = chosen_color
+
+                cost = self.calculate_cost(colors)
+                all_colors.append(colors)
+                all_costs.append(cost)
+
+                if cost < best_cost:
+                    best_colors = colors
+                    best_cost = cost
+
+            pheromone *= (1 - evaporation_rate)
+            for colors, cost in zip(all_colors, all_costs):
+                for vertex, color in enumerate(colors):
+                    pheromone[vertex][color] += 1.0 / (1 + cost)
+
+            self.generation_label.config(text=f"Iterations: {iteration + 1}")
+            self.root.update_idletasks()
+
+        if best_cost == 0:
+            self.solution_label.config(text="Solution Found with ACO!", foreground="green")
+            self.draw_graph(best_colors)
+        else:
+            self.solution_label.config(text="No perfect solution found with ACO.", foreground="red")
+
+    def calculate_cost(self, colors):
+        """Calculate the cost of a color assignment."""
+        cost = 0
+        for i in range(self.n):
+            for j in range(i + 1, self.n):
+                if self.graph[i][j] == 1 and colors[i] == colors[j]:
+                    cost += 1
+        return cost
+
+    def solve_graph_coloring_util(self, colors, vertex, iterations):
+        if vertex == self.n:
+            return True
+
+        iterations[0] += 1
+
+        for color in range(self.max_colors):
+            if self.is_safe_color(vertex, color, colors):
+                colors[vertex] = color
+                if self.solve_graph_coloring_util(colors, vertex + 1, iterations):
+                    return True
+                colors[vertex] = -1
+
+        return False
 
 def main():
     root = tk.Tk()
